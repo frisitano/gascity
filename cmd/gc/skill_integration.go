@@ -85,8 +85,9 @@ func canStage1Materialize(citySessionProvider string, agent *config.Agent) bool 
 // Hybrid is also ineligible. A default-config hybrid city routes every
 // session to local tmux and would work, but once the user configures
 // RemoteMatch (or GC_HYBRID_REMOTE_MATCH), some sessions route to
-// k8s — and a host-side PreStart would execute on the controller box
-// instead of the pod, materializing into the wrong workdir.
+// a remote backend — and a host-side PreStart would execute on the
+// controller box instead of the remote runtime, materializing into the
+// wrong workdir.
 // Per-session routing-aware eligibility is Phase 4A work.
 //
 // Agent.Session == "acp" overrides the city-level session selector at

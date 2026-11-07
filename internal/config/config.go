@@ -1627,10 +1627,13 @@ type SessionConfig struct {
 	// automatically. Set explicitly to override.
 	Socket string `toml:"socket,omitempty"`
 	// RemoteMatch is a substring pattern for the hybrid provider to route
-	// sessions to the remote (K8s) backend. Sessions whose names contain
-	// this pattern go to K8s; all others stay local (tmux).
+	// sessions to the remote backend. Sessions whose names contain this
+	// pattern go remote; all others stay local (tmux).
 	// Overridden by the GC_HYBRID_REMOTE_MATCH env var if set.
 	RemoteMatch string `toml:"remote_match,omitempty"`
+	// RemoteProvider selects the hybrid provider's remote backend. Supported
+	// values are "k8s" (the default) and "ssh:<host>".
+	RemoteProvider string `toml:"remote_provider,omitempty"`
 }
 
 // durationOr parses raw as a Go duration, returning def when raw is empty or

@@ -26,6 +26,7 @@ import (
 	sessionauto "github.com/gastownhall/gascity/internal/runtime/auto"
 	sessionhybrid "github.com/gastownhall/gascity/internal/runtime/hybrid"
 	sessionk8s "github.com/gastownhall/gascity/internal/runtime/k8s"
+	sessionssh "github.com/gastownhall/gascity/internal/runtime/ssh"
 	sessiontmux "github.com/gastownhall/gascity/internal/runtime/tmux"
 	"github.com/gastownhall/gascity/internal/session"
 	"github.com/gastownhall/gascity/internal/supervisor"
@@ -1284,16 +1285,20 @@ func openCityEventsProviderWithConfig(providerConfig func() config.EventsConfig,
 }
 
 // newHybridProvider constructs a composite provider that routes sessions to
-// tmux (local) or k8s (remote) based on session name. The GC_HYBRID_REMOTE_MATCH
-// env var controls which sessions go to k8s. If unset, all sessions route to
-// local tmux.
+// tmux (local) or a configured remote backend based on session name. The
+// GC_HYBRID_REMOTE_MATCH env var controls which sessions go remote. If unset,
+// all sessions route to local tmux.
 func newHybridProvider(sc config.SessionConfig, cityName, cityPath string) (runtime.Provider, error) {
-	// Cut-over: hybrid routes to the seam-backed tmux/k8s providers, so
+	// Cut-over: hybrid routes to seam-backed providers, so
 	// hybrid-routed sessions flow through the seams like every other path.
 	local := sessiontmux.NewSeamBackedWithConfig(tmuxConfigFromSession(sc, cityName, cityPath))
-	remote, err := sessionk8s.NewSeamBacked()
+	remoteName := hybridRemoteProviderName(sc)
+	// ponytail: keep the remote side limited to the two supported remote
+	// transports; widen this through the city registry if pack-defined remote
+	// runtimes become an actual requirement.
+	remote, err := newHybridRemoteProvider(remoteName)
 	if err != nil {
-		return nil, fmt.Errorf("hybrid: k8s backend: %w", err)
+		return nil, fmt.Errorf("hybrid: remote provider %q: %w", remoteName, err)
 	}
 	pattern := sc.RemoteMatch
 	if v := os.Getenv("GC_HYBRID_REMOTE_MATCH"); v != "" {
@@ -1302,4 +1307,26 @@ func newHybridProvider(sc config.SessionConfig, cityName, cityPath string) (runt
 	return sessionhybrid.New(local, remote, func(name string) bool {
 		return pattern != "" && strings.Contains(name, pattern)
 	}), nil
+}
+
+func hybridRemoteProviderName(sc config.SessionConfig) string {
+	if name := strings.TrimSpace(sc.RemoteProvider); name != "" {
+		return name
+	}
+	return "k8s"
+}
+
+func newHybridRemoteProvider(name string) (runtime.Provider, error) {
+	switch {
+	case name == "k8s":
+		return sessionk8s.NewSeamBacked()
+	case strings.HasPrefix(name, "ssh:"):
+		ep, err := sessionssh.ParseEndpoint(strings.TrimPrefix(name, "ssh:"))
+		if err != nil {
+			return nil, err
+		}
+		return sessionssh.NewSeamBacked(ep), nil
+	default:
+		return nil, fmt.Errorf("unsupported provider (want k8s or ssh:<host>)")
+	}
 }
